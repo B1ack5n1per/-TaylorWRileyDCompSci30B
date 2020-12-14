@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.net.URI;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.NoSuchElementException;
 
@@ -43,14 +44,16 @@ public class Main extends Application {
 	public static Map map;
 	public static Player player;
 	public static int moves = 7;
-	public static boolean ready = false;
+	public static boolean ready = false, httpReqRecieved = false, animationFinished = false;;
 	public static long timeIn = 0;
 	public static TurnBox turns;
-	public static LinkedList<KeyCode> keys = new LinkedList<KeyCode>();
+	//Switched from LinkedList to HashSet contains() O(n) -> O(1)
+	public static HashSet<KeyCode> keys = new HashSet<KeyCode>();
 	public static GameState state = GameState.PLAY;
 	public static LinkedList<Player> players = new LinkedList<Player>();
 	public static LinkedList<LinkedList<PreformableAction>> turnData = new LinkedList<LinkedList<PreformableAction>>();
 	public static LinkedList<Projectile> projectiles = new LinkedList<Projectile>();
+	public static JSONObject readyData = null, playerData = null;
 	
 	public static void main(String[] args) {
 		launch(args);
@@ -106,12 +109,16 @@ public class Main extends Application {
 		// Chat Control
 		chatController = new ChatController();
 		new Thread(chatController).start();
+		
+		// HTTP Controller
+		HttpController httpController = new HttpController();
+		httpController.start();
 
 		Chat chat = new Chat(chatController, username);
 		
 		// Animation Timer
 		AnimationTimer timer = new AnimationTimer() {
-			private boolean editing = false, updating = false, animating = false;
+			private boolean editing = false, animating = false;
 			private long animateTarget;
 			
 			private void getAnimationTarget(Long curTime) {
@@ -139,63 +146,47 @@ public class Main extends Application {
 				}
 				
 				if (ready) {
-					timeIn = time;
+					// Http Request Setup
+					JSONObject data = new JSONObject();
+					data.put("player", Main.player.toJSON());
+					data.put("turns", turns.toJSONArray());
+					data.put("map", map.id);
+					readyData = data;
 					ready = false;
-					updating = true;
 				}
-				if (time - timeIn > 1 && updating) {
-					try {
-						timeIn = time;
-						updating = false;
-						
-						// Http Request Setup
-						String res = "";
-						JSONObject data = new JSONObject();
-						data.put("player", Main.player.toJSON());
-						data.put("turns", turns.toJSONArray());
-						data.put("map", map.id);
-						
-						// Http Request
-						res = Main.client.send(HttpRequest.newBuilder()
-							.uri(new URI(HttpSettings.uri + "/ready"))
-							.POST(HttpRequest.BodyPublisher.fromString(data.toJSONString()))
-							.header("Content-Type", "application/json")
-							.build(),
-							HttpResponse.BodyHandler.asString()).body();
-						
-						// Handle Data
-						JSONObject resData = (JSONObject) new JSONParser().parse(res);
-						JSONArray resPlayers = (JSONArray) resData.get("players");
-						turnData.clear();
-						players.clear();
-						projectiles.clear();
-						for (int i = 0; i < resPlayers.size(); i++) {
-							JSONObject obj = (JSONObject) resPlayers.get(i);
-							Player newPlayer = new Player(obj, true);
-							players.add(newPlayer);
-							if (newPlayer.isAlive) {
-								if ((int)((long) obj.get("id")) == player.id) player = newPlayer;
-								LinkedList<PreformableAction> actions = new LinkedList<PreformableAction>();
-								JSONArray actionData = (JSONArray) obj.get("turns");
-								for (int j = 0; j < actionData.size(); j++) {
-									actions.add(new PreformableAction((JSONObject) actionData.get(j), newPlayer));
-								}
-								turnData.add(actions);
+				
+				if (playerData != null) {
+					readyData = null;
+					httpReqRecieved = false;
+					// Handle Data
+					JSONArray resPlayers = (JSONArray) playerData.get("players");
+					playerData = null;
+					turnData.clear();
+					players.clear();
+					projectiles.clear();
+					System.out.println(resPlayers.toJSONString());
+					for (int i = 0; i < resPlayers.size(); i++) {
+						JSONObject obj = (JSONObject) resPlayers.get(i);
+						Player newPlayer = new Player(obj, true);
+						players.add(newPlayer);
+						if (newPlayer.isAlive) {
+							if ((int)((long) obj.get("id")) == player.id) player = newPlayer;
+							LinkedList<PreformableAction> actions = new LinkedList<PreformableAction>();
+							JSONArray actionData = (JSONArray) obj.get("turns");
+							for (int j = 0; j < actionData.size(); j++) {
+								actions.add(new PreformableAction((JSONObject) actionData.get(j), newPlayer));
 							}
-							
+							turnData.add(actions);
 						}
-						
-						state = GameState.ANIMATE;
-						
-						// HUD Reset
-						control.ready.setDisable(false);
-						control.ready.setText("Ready");
-						player.clearLines();
-						control.ready.requestFocus();
-					} catch (Exception e1) {
-						e1.printStackTrace();
 					}
 					
+					state = GameState.ANIMATE;
+					
+					// HUD Reset
+					control.ready.setDisable(false);
+					control.ready.setText("Ready");
+					player.clearLines();
+					control.ready.requestFocus();
 				}
 				
 				// Test User Input
@@ -251,6 +242,7 @@ public class Main extends Application {
 							
 						} else {
 							if (state == GameState.ANIMATE) state = GameState.PLAY;
+							animationFinished = true;
 							turns.clear();
 						}
 					}
@@ -301,7 +293,6 @@ public class Main extends Application {
 		});
 		
 		window.widthProperty().addListener((obs, old, nw) -> width = (double) nw);
-		
 		window.heightProperty().addListener((obs, old, nw) -> height = (double) nw);
 		
 		window.setScene(scene);
@@ -311,6 +302,7 @@ public class Main extends Application {
 		
 		window.setOnCloseRequest(e -> {
 			chatController.stop();
+			httpController.stop();
 			timer.stop();
 			try {
 				JSONObject leaveData = new JSONObject();

@@ -1,5 +1,11 @@
 package client;
 
 public enum TileType {
-	MOUNTAIN, ROAD, GRASS, BUILDINGSMALL, BUILDINGLARGE, FACTORY, FOREST, FARM
+	MOUNTAIN("Mountain"), ROAD("Road"), GRASS("Grass"), BUILDINGSMALL("BuildingSmall"), BUILDINGLARGE("BuildingLarge"), FACTORY("Factory"), FOREST("Forest"), FARM("Farm");
+	
+	public String str;
+	
+	private TileType(String str) {
+		this.str = str;	
+	}
 }

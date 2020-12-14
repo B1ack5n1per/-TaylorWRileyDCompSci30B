@@ -1,5 +1,12 @@
 package client;
 
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.util.Scanner;
+
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
@@ -27,6 +34,13 @@ public class LoginWindow {
 		
 		TextField input = new TextField();
 		input.setFont(new Font("Arial", 24));
+		try {
+			Scanner in = new Scanner(new FileReader(new File("src/" + FileSettings.assets + "/lastUser.txt").getAbsoluteFile()));
+			input.setText(in.next());
+			in.close();
+		} catch(FileNotFoundException e) {
+			
+		}
 		
 		VBox userInput = new VBox();
 		userInput.getChildren().addAll(name, input);
@@ -60,6 +74,13 @@ public class LoginWindow {
 		window.setTitle("Tank Trouble");
 		window.setResizable(false);
 		window.showAndWait();
+		try {
+			PrintWriter fw = new PrintWriter(new File("src/" + FileSettings.assets + "/lastUser.txt").getAbsoluteFile());
+			fw.println(username);
+			fw.close();
+		} catch (IOException e1) {
+			e1.printStackTrace();
+		}
 		return username;
 	}
 }
